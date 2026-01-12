@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let completed = false;
 
       while (!completed) {
-        const checkRes = await fetch('https://Tobyv2.netlify.app/.netlify/functions/check-run', {
+        const checkRes = await fetch('https://tobyversion2.netlify.app/.netlify/functions/check-run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ thread_id, run_id }),
@@ -136,4 +136,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 });
+
 
