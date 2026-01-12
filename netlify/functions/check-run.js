@@ -71,12 +71,17 @@ exports.handler = async (event) => {
     const messages = await msgRes.json();
 
     // 3️⃣ Get latest assistant message
-    const assistantMessage = messages.data.find(
-      (m) => m.role === 'assistant'
-    );
+    const assistantMessages = messages.data.filter(
+  (m) => m.role === 'assistant'
+);
 
-    const text =
-      assistantMessage?.content?.[0]?.text?.value || '(No Response)';
+const latest = assistantMessages[0]; // newest assistant reply
+
+const text =
+  latest?.content
+    ?.filter(c => c.type === 'output_text')
+    ?.map(c => c.text.value)
+    ?.join('\n') || '(No Response)';
 
     return {
       statusCode: 200,
@@ -98,3 +103,4 @@ exports.handler = async (event) => {
     };
   }
 };
+
