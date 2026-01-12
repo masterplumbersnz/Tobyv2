@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ---- Text formatting helpers ----
-
   const formatMarkdown = (text) => {
     return text
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -99,7 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       thread_id = data.thread_id;
 
-      const replyText = (data.reply || '(No response)').trim();
+      // ✅ Bulletproof: accept either reply or response field
+      const replyText = (data.reply || data.response || '(No response)').trim();
 
       thinkingBubble.remove();
       createBubble(replyText, 'bot');
