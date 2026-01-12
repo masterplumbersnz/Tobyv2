@@ -105,20 +105,21 @@ exports.handler = async (event) => {
     console.log('RAW assistant messages:', JSON.stringify(messages, null, 2));
 
     // Extract latest assistant message text
-    const assistantMessages = messages.data.filter((m) => m.role === 'assistant');
-    assistantMessages.sort((a, b) => b.created_at - a.created_at);
-    const latest = assistantMessages[0];
+const assistantMessages = messages.data.filter((m) => m.role === 'assistant');
+assistantMessages.sort((a, b) => b.created_at - a.created_at);
+const latest = assistantMessages[0];
 
-    let reply = '(No response)';
-    if (latest && Array.isArray(latest.content)) {
-      const texts = latest.content
-        .filter((c) => c.type === 'output_text')
-        .map((c) => c.text?.value)
-        .filter(Boolean);
-      if (texts.length > 0) reply = texts.join('\n');
-    }
+let reply = '(No response)';
+if (latest && Array.isArray(latest.content)) {
+  const texts = latest.content
+    .filter((c) => c.type === 'text' || c.type === 'output_text')
+    .map((c) => c.text?.value)
+    .filter(Boolean);
+  if (texts.length > 0) reply = texts.join('\n');
+}
 
-    console.log('Reply being sent:', reply);
+console.log('Reply being sent:', reply);
+
 
     return {
       statusCode: 200,
@@ -134,3 +135,4 @@ exports.handler = async (event) => {
     };
   }
 };
+
