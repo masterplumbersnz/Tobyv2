@@ -1,99 +1,64 @@
 const fetch = require('node-fetch');
 
-const ALLOWED_ORIGINS = [
-  'https://masterplumbers.org.nz',
-  'https://tobyv2.netlify.app',
-  'https://tobyversion2.netlify.app'
-];
-
-const origin = event.headers.origin;
-
-const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-
-const headers = {
-  'Access-Control-Allow-Origin': allowedOrigin,
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
 exports.handler = async (event) => {
-  console.log('Incoming Event:', JSON.stringify(event, null, 2));
+  const ALLOWED_ORIGINS = [
+    'https://masterplumbers.org.nz',
+    'https://tobyv2.netlify.app',
+    'https://tobyversion2.netlify.app',
+  ];
 
-  // Handle CORS preflight
+  const origin = event.headers.origin;
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin)
+    ? origin
+    : ALLOWED_ORIGINS[0];
+
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+
+  // Preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-      },
+      headers: corsHeaders,
       body: '',
     };
   }
 
   try {
-    // Validate and parse incoming JSON
-    let message, thread_id;
-    try {
-      const parsed = JSON.parse(event.body || '{}');
-      message = parsed.message;
-      thread_id = parsed.thread_id;
-    } catch (e) {
-      console.error('Invalid JSON in request:', e);
-      return {
-        statusCode: 400,
-        headers: {
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ error: 'Invalid JSON in request body.' }),
-      };
-    }
+    const { message, thread_id } = JSON.parse(event.body || '{}');
 
     if (!message) {
       return {
         statusCode: 400,
-        headers: {
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ error: 'Missing message in request body.' }),
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Missing message' }),
       };
     }
 
-    // Get env vars
-    const assistantId = process.env.OPENAI_ASSISTANT_ID;
     const apiKey = process.env.OPENAI_API_KEY;
+    const assistantId = process.env.OPENAI_ASSISTANT_ID;
 
     if (!apiKey || !assistantId) {
-      console.error('Missing environment variables');
-      return {
-        statusCode: 500,
-        headers: {
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          error: 'Server misconfiguration: Missing API key or Assistant ID',
-        }),
-      };
+      throw new Error('Missing OPENAI_API_KEY or OPENAI_ASSISTANT_ID');
     }
 
-    // Create thread if needed
-    const threadRes = thread_id
-      ? { id: thread_id }
-      : await fetch('https://api.openai.com/v1/threads', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'OpenAI-Beta': 'assistants=v2',
-            'Content-Type': 'application/json',
-          },
-        }).then((res) => res.json());
-
-    const threadId = threadRes.id;
-    console.log('Using thread ID:', threadId);
+    // Create or reuse thread
+    let threadId = thread_id;
+    if (!threadId) {
+      const threadRes = await fetch('https://api.openai.com/v1/threads', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'OpenAI-Beta': 'assistants=v2',
+          'Content-Type': 'application/json',
+        },
+      });
+      const thread = await threadRes.json();
+      threadId = thread.id;
+    }
 
     // Post user message
     await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
@@ -106,7 +71,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({ role: 'user', content: message }),
     });
 
-    // Run the assistant
+    // Start run
     const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
       headers: {
@@ -115,29 +80,28 @@ exports.handler = async (event) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ assistant_id: assistantId }),
-    }).then((res) => res.json());
+    });
 
-    const runId = runRes.id;
-    console.log('Run started:', runId);
+    const run = await runRes.json();
 
     // Poll until complete
-    let runStatus = 'in_progress';
-    while (runStatus === 'in_progress' || runStatus === 'queued') {
-      await new Promise((r) => setTimeout(r, 1500));
-      const statusRes = await fetch(
-        `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
+    let status = run.status;
+    while (status === 'queued' || status === 'in_progress') {
+      await new Promise((r) => setTimeout(r, 1200));
+      const pollRes = await fetch(
+        `https://api.openai.com/v1/threads/${threadId}/runs/${run.id}`,
         {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'OpenAI-Beta': 'assistants=v2',
           },
         }
-      ).then((res) => res.json());
-
-      runStatus = statusRes.status;
+      );
+      const poll = await pollRes.json();
+      status = poll.status;
     }
 
-    // Get messages
+    // Fetch messages
     const messagesRes = await fetch(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
       {
@@ -146,34 +110,31 @@ exports.handler = async (event) => {
           'OpenAI-Beta': 'assistants=v2',
         },
       }
-    ).then((res) => res.json());
+    );
 
-    const lastMessage = messagesRes.data
-      .filter((msg) => msg.role === 'assistant')
-      .sort((a, b) => b.created_at - a.created_at)[0];
+    const messages = await messagesRes.json();
 
-    const reply = lastMessage?.content?.[0]?.text?.value || '(No reply)';
+    const assistantMsg = messages.data.find(
+      (m) => m.role === 'assistant'
+    );
 
-    console.log('Reply:', reply);
+    const reply =
+      assistantMsg?.content
+        ?.filter((c) => c.type === 'output_text')
+        ?.map((c) => c.text.value)
+        ?.join('\n') || '(No response)';
 
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-        'Content-Type': 'application/json',
-      },
+      headers: corsHeaders,
       body: JSON.stringify({ reply, thread_id: threadId }),
     };
   } catch (error) {
-    console.error('Unhandled Error in chat-proxy.js:', error);
+    console.error('chat-proxy error:', error);
     return {
       statusCode: 500,
-      headers: {
-        'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ error: 'Internal server error' }),
+      headers: corsHeaders,
+      body: JSON.stringify({ error: error.message }),
     };
   }
 };
-
