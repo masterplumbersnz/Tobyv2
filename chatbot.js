@@ -4,19 +4,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const messages = document.getElementById('messages');
   let thread_id = null;
 
-  // Make textarea auto-expand
+  // Auto-expand textarea
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
   });
 
-  // ✅ NEW: Send message on Enter, newline on Shift+Enter
+  // Enter to send, Shift+Enter for newline
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      form.requestSubmit(); // triggers the form submit handler below
+      form.requestSubmit();
     }
   });
+
+  // ---- Text formatting helpers ----
 
   const formatMarkdown = (text) => {
     return text
@@ -26,35 +28,21 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/\n/g, '<br>');
   };
 
-  const formatCitations = (text) => {
-    let formatted = text.replace(/【\d+:\d+†([^†]+)†?(.*?)?】/g, (_, sourceName) => {
-      return `<em>[Source: ${sourceName}]</em>`;
-    });
-
-    formatted = formatted.replace(/\[Source:\s*(.*?)\]/g, (_, sourceName) => {
-      return `<em>[Source: ${sourceName}]</em>`;
-    });
-
-    return formatted;
-  };
-
   const repairInlineCitations = (text) => {
     return text
       .replace(/\[Source:\s*(.*?)】】【(\d+):(\d+)]/g, '【$2:$3†$1†lines】')
       .replace(/\[Source:\s*(.*?)】【(\d+):(\d+)]/g, '【$2:$3†$1†lines】');
   };
 
-  // ✅ NEW: Strip numbered citations like  
   const stripCitations = (text) => {
-  return text.replace(/【\d+:\d+†[^†【】]+(?:†[^【】]*)?】/g, '');
-};
+    return text.replace(/【\d+:\d+†[^†【】]+(?:†[^【】]*)?】/g, '');
+  };
 
   const createBubble = (content, sender) => {
     const div = document.createElement('div');
-
     const cleaned = stripCitations(content);
     const repaired = repairInlineCitations(cleaned);
-    const formatted = formatMarkdown(repaired); // No formatCitations anymore
+    const formatted = formatMarkdown(repaired);
 
     if (sender === 'bot') {
       const wrapper = document.createElement('div');
@@ -73,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
       messages.appendChild(wrapper);
     } else {
       div.className = 'bubble user';
-      div.innerHTML = content;
+      div.textContent = content; // plain text for user
       messages.appendChild(div);
     }
 
@@ -85,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return createBubble('<span class="spinner"></span> Toby is thinking...', 'bot');
   };
 
+  // ---- Form submit ----
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const message = input.value.trim();
@@ -92,49 +81,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     createBubble(message, 'user');
     input.value = '';
-    input.style.height = 'auto'; // Reset height after sending
+    input.style.height = 'auto';
     const thinkingBubble = showSpinner();
 
     try {
-      const startRes = await fetch('https://tobyversion2.netlify.app/.netlify/functions/start-run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, thread_id }),
-      });
-
-      const { thread_id: newThreadId, run_id } = await startRes.json();
-      thread_id = newThreadId;
-
-      let reply = '';
-      let completed = false;
-
-      while (!completed) {
-        const checkRes = await fetch('https://tobyversion2.netlify.app/.netlify/functions/check-run', {
+      const res = await fetch(
+        'https://tobyversion2.netlify.app/.netlify/functions/chat-proxy',
+        {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ thread_id, run_id }),
-        });
-
-        if (checkRes.status === 202) {
-          await new Promise(r => setTimeout(r, 1000));
-        } else if (checkRes.ok) {
-          const data = await checkRes.json();
-          reply = data.reply || '(No response)';
-          completed = true;
-        } else {
-          throw new Error('Check-run failed with status: ' + checkRes.status);
+          body: JSON.stringify({ message, thread_id }),
         }
-      }
+      );
+
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+      const data = await res.json();
+      thread_id = data.thread_id;
+
+      const replyText = (data.reply || '(No response)').trim();
 
       thinkingBubble.remove();
-      createBubble(reply, 'bot');
+      createBubble(replyText, 'bot');
     } catch (err) {
       console.error('Chat error:', err);
       thinkingBubble.remove();
-      createBubble('🤖 My circuits got tangled for a second. Can we try that again?', 'bot');
+      createBubble(
+        '🤖 My circuits got tangled for a second. Can we try that again?',
+        'bot'
+      );
     }
   });
-
 });
-
-
