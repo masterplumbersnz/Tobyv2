@@ -1,20 +1,9 @@
 const fetch = require('node-fetch');
-const ALLOWED_ORIGINS = [
-  'https://masterplumbers.org.nz',
-  'https://tobyversion2.netlify.app'
-];
-
-const origin = event.headers.origin;
-
-const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-
-const headers = {
-  'Access-Control-Allow-Origin': allowedOrigin,
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
 
 exports.handler = async (event) => {
+  const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+
+  // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -28,11 +17,25 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { message, thread_id } = JSON.parse(event.body || '{}');
+    if (!event.body) {
+      return {
+        statusCode: 400,
+        headers: { 'Access-Control-Allow-Origin': ALLOWED_ORIGIN },
+        body: JSON.stringify({ error: 'Missing request body.' }),
+      };
+    }
+
+    const { message, thread_id } = JSON.parse(event.body);
+
     const apiKey = process.env.OPENAI_API_KEY;
     const assistantId = process.env.OPENAI_ASSISTANT_ID;
 
     if (!message || !apiKey || !assistantId) {
+      console.error('Missing message or environment variables', {
+        message,
+        apiKey: !!apiKey,
+        assistantId: !!assistantId,
+      });
       return {
         statusCode: 400,
         headers: { 'Access-Control-Allow-Origin': ALLOWED_ORIGIN },
@@ -40,8 +43,8 @@ exports.handler = async (event) => {
       };
     }
 
+    // Create thread if not provided
     let threadRes = { id: thread_id };
-
     if (!thread_id) {
       const createThreadRes = await fetch('https://api.openai.com/v1/threads', {
         method: 'POST',
@@ -60,6 +63,7 @@ exports.handler = async (event) => {
       threadRes = await createThreadRes.json();
     }
 
+    // Post user message
     const msgPostRes = await fetch(`https://api.openai.com/v1/threads/${threadRes.id}/messages`, {
       method: 'POST',
       headers: {
@@ -75,6 +79,7 @@ exports.handler = async (event) => {
       throw new Error(`Message post failed: ${text}`);
     }
 
+    // Create run
     const runPostRes = await fetch(`https://api.openai.com/v1/threads/${threadRes.id}/runs`, {
       method: 'POST',
       headers: {
@@ -109,4 +114,3 @@ exports.handler = async (event) => {
     };
   }
 };
-
