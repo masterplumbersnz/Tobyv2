@@ -18,18 +18,13 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
-  // Preflight
+  // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: corsHeaders,
-      body: '',
-    };
+    return { statusCode: 200, headers: corsHeaders, body: '' };
   }
 
   try {
     const { message, thread_id } = JSON.parse(event.body || '{}');
-
     if (!message) {
       return {
         statusCode: 400,
@@ -40,12 +35,11 @@ exports.handler = async (event) => {
 
     const apiKey = process.env.OPENAI_API_KEY;
     const assistantId = process.env.OPENAI_ASSISTANT_ID;
-
     if (!apiKey || !assistantId) {
       throw new Error('Missing OPENAI_API_KEY or OPENAI_ASSISTANT_ID');
     }
 
-    // Create or reuse thread
+    // Create thread if needed
     let threadId = thread_id;
     if (!threadId) {
       const threadRes = await fetch('https://api.openai.com/v1/threads', {
@@ -81,7 +75,6 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({ assistant_id: assistantId }),
     });
-
     const run = await runRes.json();
 
     // Poll until complete
@@ -102,27 +95,30 @@ exports.handler = async (event) => {
     }
 
     // Fetch messages
-    const messagesRes = await fetch(
-      `https://api.openai.com/v1/threads/${threadId}/messages`,
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'OpenAI-Beta': 'assistants=v2',
-        },
-      }
-    );
-
+    const messagesRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'OpenAI-Beta': 'assistants=v2',
+      },
+    });
     const messages = await messagesRes.json();
+    console.log('RAW assistant messages:', JSON.stringify(messages, null, 2));
 
-    const assistantMsg = messages.data.find(
-      (m) => m.role === 'assistant'
-    );
+    // Extract latest assistant message text
+    const assistantMessages = messages.data.filter((m) => m.role === 'assistant');
+    assistantMessages.sort((a, b) => b.created_at - a.created_at);
+    const latest = assistantMessages[0];
 
-    const reply =
-      assistantMsg?.content
-        ?.filter((c) => c.type === 'output_text')
-        ?.map((c) => c.text.value)
-        ?.join('\n') || '(No response)';
+    let reply = '(No response)';
+    if (latest && Array.isArray(latest.content)) {
+      const texts = latest.content
+        .filter((c) => c.type === 'output_text')
+        .map((c) => c.text?.value)
+        .filter(Boolean);
+      if (texts.length > 0) reply = texts.join('\n');
+    }
+
+    console.log('Reply being sent:', reply);
 
     return {
       statusCode: 200,
