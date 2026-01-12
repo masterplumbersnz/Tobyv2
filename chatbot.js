@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
       wrapper.className = 'bot-message';
 
       const avatar = document.createElement('img');
-      avatar.src = 'https://Tobyv2.netlify.app/Toby-Avatar.svg';
+      avatar.src = 'https://tobyversion2.netlify.app/Toby-Avatar.svg';
       avatar.alt = 'Toby';
       avatar.className = 'avatar';
 
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const thinkingBubble = showSpinner();
 
     try {
-      const startRes = await fetch('https://Tobyv2.netlify.app/.netlify/functions/start-run', {
+      const startRes = await fetch('https://tobyversion2.netlify.app/.netlify/functions/start-run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, thread_id }),
@@ -136,3 +136,4 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 });
+
