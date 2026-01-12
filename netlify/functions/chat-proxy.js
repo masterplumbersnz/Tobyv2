@@ -1,6 +1,20 @@
 const fetch = require('node-fetch');
 
-const ALLOWED_ORIGIN = 'https://masterplumbers.org.nz';
+const ALLOWED_ORIGINS = [
+  'https://masterplumbers.org.nz',
+  'https://tobyv2.netlify.app',
+  'https://tobyversion2.netlify.app'
+];
+
+const origin = event.headers.origin;
+
+const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
+const headers = {
+  'Access-Control-Allow-Origin': allowedOrigin,
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
 exports.handler = async (event) => {
   console.log('Incoming Event:', JSON.stringify(event, null, 2));
@@ -162,3 +176,4 @@ exports.handler = async (event) => {
     };
   }
 };
+
